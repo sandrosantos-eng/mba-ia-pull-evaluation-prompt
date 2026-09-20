@@ -9,6 +9,16 @@ from typing import Dict, Any, Optional
 from pathlib import Path
 from dotenv import load_dotenv
 
+# Usa o armazenamento de certificados do sistema. Necessário em redes com
+# interceptação SSL/VPN corporativa (certificados auto-assinados), mesmo padrão
+# do desafio anterior (src/search.py).
+try:
+    import truststore
+
+    truststore.inject_into_ssl()
+except ImportError:
+    pass
+
 load_dotenv()
 
 
@@ -219,7 +229,8 @@ def get_llm(model: Optional[str] = None, temperature: float = 0.0):
         return ChatGoogleGenerativeAI(
             model=model_name,
             temperature=temperature,
-            google_api_key=api_key
+            google_api_key=api_key,
+            transport="rest",
         )
 
     else:

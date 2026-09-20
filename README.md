@@ -304,3 +304,185 @@ C) Seção "Como Executar":
 - Não altere os datasets de avaliação - apenas os prompts em prompts/bug_to_user_story_v2.yml
 - Itere, itere, itere - é normal precisar de 3-5 iterações para atingir 0.8 em todas as métricas
 - Documente seu processo - a jornada de otimização é tão importante quanto o resultado final
+
+---
+
+# Documentação do Processo
+
+## Técnicas Aplicadas (Fase 2)
+
+Para otimizar o prompt `prompts/bug_to_user_story_v2.yml`, apliquei **4 técnicas de Prompt Engineering** — incluindo as obrigatórias do desafio (Few-shot Learning + pelo menos uma técnica avançada):
+
+### 1. Role Prompting — persona de Senior Product Manager
+
+**O que foi feito:** o system prompt define a persona *"Senior Product Manager com 10+ anos de experiência em metodologias ágeis (Scrum e Kanban), especialista em converter relatos de bugs em User Stories de alta qualidade, prontas para o time de desenvolvimento executar"*.
+
+**Por quê:** um papel claro fixa o estilo de escrita, o nível de profundidade e a prioridade profissional da resposta. O modelo passa a escrever "como um PM", entregando User Stories acionáveis em vez de respostas genéricas de assistente.
+
+**Exemplo aplicado no prompt:**
+```text
+Você é um Senior Product Manager com 10+ anos de experiência em metodologias ágeis (Scrum e Kanban), especialista em converter relatos de bugs em User Stories de alta qualidade, prontas para o time de desenvolvimento executar.
+```
+
+### 2. Chain of Thought (CoT) — raciocínio passo a passo
+
+**O que foi feito:** o prompt instrui o modelo a raciocinar em ordem antes de redigir a resposta final: 1) analisar o bug (problema raiz, sintoma, impacto e **todos** os problemas listados) → 2) identificar a persona → 3) definir o objetivo/valor de negócio → 4) redigir a User Story → 5) definir os Critérios de Aceitação → 6) completar a estrutura conforme a complexidade.
+
+**Por quê:** converter bug → User Story é uma tarefa de decomposição (problema, impacto, persona, valor). O CoT força uma análise ordenada e completa, reduzindo omissões de detalhes técnicos (alavanca para F1-Score e Precision) e de partes do relato.
+
+**Exemplo aplicado no prompt:**
+```text
+Antes de escrever a resposta final, raciocine internamente na seguinte ordem:
+1. ANALISAR o relato de bug: identifique o problema raiz, o sintoma observado, o impacto no usuário/negócio e TODOS os problemas listados (um relato pode conter MÚLTIPLOS problemas diferentes).
+```
+
+### 3. Few-shot Learning (obrigatória) — exemplos entrada → saída
+
+**O que foi feito:** inclui 2 exemplos completos de entrada/saída:
+- **Exemplo 1 (bug simples):** botão "Salvar" sem resposta na aba de notificações → User Story + 5 critérios Given-When-Then.
+- **Exemplo 2 (bug complexo):** checkout com XSS + timeout no gateway + race condition em cupom + loading infinito → estrutura completa com critérios agrupados por categoria (Segurança, Integração, Lógica de Negócio, UX), contexto do bug e tasks técnicas.
+
+**Por quê:** exemplos concretos fixam o formato de saída desejado e o nível de detalhe esperado por complexidade. O modelo imita a estrutura demonstrada — técnica com maior impacto na consistência do formato.
+
+**Exemplo aplicado no prompt:**
+```text
+## Exemplo 1 — Bug simples
+**Entrada:** O botão "Salvar" da tela de configurações não responde quando o usuário está na aba "Notificações".
+**Saída esperada:** ## User Story ... ## Critérios de Aceitação ...
+```
+
+### 4. Structured Output — formato controlado (Markdown + Given-When-Then)
+
+**O que foi feito:** o prompt exige um formato obrigatório em Markdown: seção `## User Story` com "Como / Eu quero / Para que", seção `## Critérios de Aceitação` em Given-When-Then, e níveis de complexidade (simples/médio/complexo) que adicionam seções — `Contexto Técnico`, `Critérios Técnicos`, `Contexto do Bug` e `Tasks Técnicas Sugeridas` — quando aplicável.
+
+**Por quê:** as métricas (Clarity, F1, Precision) premiam respostas organizadas e completas. Um formato rígido e validável reduz respostas soltas e garante a cobertura exigida.
+
+**Exemplo aplicado no prompt:**
+```text
+## User Story
+**Como** um [persona específica], **eu quero** [ação/funcionalidade desejada], **para que** [benefício/valor real para o usuário ou negócio].
+
+## Critérios de Aceitação
+- Dado que [contexto inicial]
+- Quando [ação executada]
+- Então [resultado esperado]
+- E [condições adicionais quando aplicável]
+```
+
+### Regras de comportamento e edge cases
+
+Além das técnicas, o prompt define regras explícitas (requisito do desafio):
+- **Anti-alucinação:** nunca inventar informações, dados, endpoints, logs ou contextos que não estejam no relato.
+- **Preservação de detalhes técnicos:** valores, códigos de erro, stack traces, z-index, tempos, versões.
+- **Multi-problemas:** se o relato contém vários bugs, **todos** devem ser cobertos.
+- **Edge cases:** segurança (XSS), concorrência (race condition), performance (timeouts), UX (loading infinito).
+- **System vs User adequados:** todo contexto/regras/exemplos ficam no **system prompt**; o **user prompt** contém apenas o `{bug_report}`.
+
+## Resultados Finais
+
+A avaliação foi executada no **LangSmith** com o dataset `prompt-optimization-challenge-resolved-eval` (criado a partir de `datasets/bug_to_user_story.jsonl`, **15 exemplos** — 5 simples, 7 médios, 3 complexos), usando o modelo `gemini-3.5-flash-lite` (Google AI Studio, camada gratuita) tanto para gerar quanto para julgar.
+
+### Tabela comparativa v1 (ruim) × v2 (otimizado)
+
+| Métrica | v1 `leonanluppi/bug_to_user_story_v1` | v2 `sandrosantos-eng/bug_to_user_story_v2` |
+|---|---|---|
+| Helpfulness | 0.91 ✓ | 0.91 ✓ |
+| Correctness | 0.89 ✓ | **0.90** ✓ |
+| F1-Score | 0.87 ✓ | **0.89** ✓ |
+| Clarity | 0.91 ✓ | 0.91 ✓ |
+| Precision | 0.91 ✓ | 0.91 ✓ |
+| **MÉDIA GERAL** | **0.8976** | **0.9063** ✓ |
+
+**Resultado:** o prompt otimizado (v2) atingiu **TODAS as 5 métricas ≥ 0.8** com média **0.9063** → **APROVADO ✅**. A maior evolução sobre o v1 está em **F1-Score** (0.89 vs 0.87) e **Correctness** (0.90 vs 0.89), reflexo do Few-shot e do CoT na completude dos critérios de aceitação e do formato estruturado. O v1 já entrega ~0.90 por ser um prompt funcional e por o juiz LLM tender a ser generoso; a v2 supera em precisão de conteúdo e consistência de formato.
+
+### Notas por exemplo (v2)
+
+```text
+[1/15]  F1:0.97  Clarity:0.85  Precision:0.93
+[2/15]  F1:0.92  Clarity:0.85  Precision:0.93
+[3/15]  F1:1.00  Clarity:0.85  Precision:0.95
+[4/15]  F1:0.84  Clarity:0.95  Precision:0.87
+[5/15]  F1:0.82  Clarity:0.90  Precision:0.87
+[6/15]  F1:0.82  Clarity:0.85  Precision:0.87
+[7/15]  F1:0.97  Clarity:0.95  Precision:1.00
+[8/15]  F1:0.87  Clarity:0.95  Precision:0.93
+[9/15]  F1:0.82  Clarity:0.95  Precision:0.83
+[10/15] F1:0.87  Clarity:0.95  Precision:0.90
+[11/15] F1:0.92  Clarity:0.85  Precision:0.93
+[12/15] F1:0.82  Clarity:0.95  Precision:0.83
+[13/15] F1:0.92  Clarity:0.95  Precision:1.00
+[14/15] F1:0.95  Clarity:0.95  Precision:1.00
+[15/15] F1:0.85  Clarity:0.88  Precision:0.87
+```
+
+### Evidências no LangSmith
+
+- Dashboard de avaliação: https://smith.langchain.com/projects/prompt-optimization-challenge-resolved
+- Prompt público otimizado (v2): https://smith.langchain.com/prompts/bug_to_user_story_v2/033a4799?organizationId=a586146c-6a59-4103-9fa3-04de5d710152
+- Dataset de avaliação: `prompt-optimization-challenge-resolved-eval` (15 exemplos)
+
+> **Screenshots:** adicione aqui os prints do dashboard (dataset com 15 exemplos, execuções do v2 com notas ≥ 0.8 e o tracing detalhado de pelo menos 3 exemplos).
+
+## Como Executar
+
+### Pré-requisitos
+
+- Python 3.10+ (recomendado 3.12)
+- Conta no LangSmith ([smith.langchain.com](https://smith.langchain.com)) com API Key (`LANGSMITH_API_KEY`)
+- API Key do Google AI Studio ([aistudio.google.com](https://aistudio.google.com/apikey)) — modelo gratuito `gemini-3.5-flash-lite`
+
+### 1. Configurar as variáveis de ambiente
+
+```bash
+cp .env.example .env
+```
+
+Preencha no `.env`:
+- `LANGSMITH_API_KEY` — sua chave do LangSmith
+- `GOOGLE_API_KEY` — sua chave do Google AI Studio
+- `USERNAME_LANGSMITH_HUB` — seu username do LangSmith Hub (ex.: `sandrosantos-eng`)
+
+> ⚠️ O arquivo `.env` NÃO deve ser versionado (contém credenciais). Ele já está no `.gitignore`.
+
+### 2. Criar o ambiente virtual e instalar as dependências
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+### 3. Validar os testes
+
+```bash
+pytest tests/test_prompts.py -v
+```
+
+### 4. Fazer o pull do prompt de baixa qualidade
+
+```bash
+python src/pull_prompts.py
+```
+
+Gera `prompts/bug_to_user_story_v1.yml` a partir do LangSmith Hub (`leonanluppi/bug_to_user_story_v1`).
+
+### 5. Publicar o prompt otimizado
+
+```bash
+python src/push_prompts.py
+```
+
+Publica `prompts/bug_to_user_story_v2.yml` como `{username}/bug_to_user_story_v2` (público, com tags e metadados de técnicas).
+
+### 6. Avaliar
+
+```bash
+python src/evaluate.py
+```
+
+Cria/atualiza o dataset no LangSmith, puxa o prompt v2 do Hub, executa contra os 15 bugs e calcula as 5 métricas (Helpfulness, Correctness, F1-Score, Clarity, Precision). Critério de aprovação: **todas as métricas ≥ 0.8** e média ≥ 0.8.
+
+### Observações
+
+- **Limites do plano gratuito:** os modelos `gemini-flash` têm cota diária limitada (ex.: `gemini-3.6-flash` ≈ 20 req/dia). Por isso a avaliação usa `gemini-3.5-flash-lite` (cota maior). Ajuste `LLM_MODEL`/`EVAL_MODEL` no `.env` conforme os limites atuais do Google.
+- **Rede corporativa/SSL:** se as chamadas ao Gemini falharem por certificado, o `src/utils.py` já injeta `truststore` e usa `transport="rest"` — mesmo padrão do desafio anterior (`mba-ia-desafio-ingestao-busca`).
